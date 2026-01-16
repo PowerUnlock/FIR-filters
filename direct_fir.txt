@@ -1,0 +1,94 @@
+module direct_fir #(parameter integer N = 100)
+
+(
+    input  wire                 clk,
+    input  wire                 rst,    // synchronous active-high reset
+    input  wire                 vin,
+    input  wire signed  [15:0]  xin,    // Q_2_14
+    output reg                  vout,
+    output reg signed  [15:0]   yout     // Q_2_14
+
+);
+
+integer i;
+
+    reg signed [15:0] xdel [0:N-1];
+    reg signed [15:0] h    [0:N-1];
+
+    reg signed [63:0] acc;
+    reg signed [31:0] prod;
+    reg vin_d;
+
+    
+    reg signed [63:0] acc_abs;
+    reg signed [63:0] acc_scaled;
+
+    localparam signed [63:0] HALF_LSB = 64'sd8192;  // 2^13
+    localparam integer       SHIFT    = 14;
+
+    initial begin
+        $readmemh("coef_q214_hex.txt", h);
+    end
+
+    function automatic signed [15:0] sat16(input signed [63:0] x);
+        begin
+            if (x > 64'sd32767)       sat16 = 16'sd32767;
+            else if (x < - 64'sd32768) sat16 = - 16'sd32768;
+            else                      sat16 = x[15:0];
+        end
+    endfunction
+
+    always @(posedge clk) begin // b1
+
+        if (rst) begin //b2
+            for (i=0; i<N; i=i+1) xdel[i] <= 16'sd0;
+            yout <= 16'sd0;
+            vout <= 1'b0;
+            vin_d <= 1'b0;
+        end // b2 
+
+        else begin // b3
+
+         
+
+          if (vin) begin // b4
+
+              for (i=N-1; i>0; i=i-1)
+                    xdel[i] <= xdel[i-1];
+                xdel[0] <= xin;
+
+              end // b4
+              
+           vin_d <= vin ;
+           vout <= 1'b0;
+           
+           if (vin_d) begin // b8
+
+                acc = 64'sd0;
+                acc_abs    = 64'sd0;
+                acc_scaled = 64'sd0;
+                for (i=0; i<N; i=i+1) begin // b5
+                    prod = xdel[i] * h[i];                 // Q_4_28 
+                    acc  = acc + {{32{prod[31]}}, prod};    // sign extend to 64
+                end // b5
+
+                if (acc >= 0) begin // b6
+                    acc_scaled = (acc + HALF_LSB) >>> SHIFT;
+                end // b6
+                else begin // b7
+                    acc_abs    = -acc;  // magnitude
+                    acc_scaled = -((acc_abs + HALF_LSB) >>> SHIFT);
+                end // b7
+       
+                yout <= sat16(acc_scaled);
+                vout <= 1'b1;
+
+          end // b8
+
+        
+        end // b3
+
+
+    end // b1
+
+endmodule

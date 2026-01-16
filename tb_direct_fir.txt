@@ -1,0 +1,132 @@
+`timescale 1ns/1ps
+
+module tb_direct_fir;
+
+  // Parameters
+
+  parameter integer N_TAPS   = 100;
+  parameter integer NSAMPLES = 2000;
+
+  parameter integer TCLK = 10;
+
+  // DUT signals
+
+  reg clk;
+  reg rst;
+  reg vin;
+  reg signed [15:0] xin;
+
+  wire vout;
+  wire signed [15:0] yout;
+
+ 
+  // Input memory
+
+  reg [15:0] xmem [0:NSAMPLES-1];
+
+  integer n;
+  integer fout;
+
+
+  // Instantiate DUT
+
+  direct_fir #(.N(N_TAPS)) dut (
+    .clk (clk),
+    .rst (rst),
+    .vin (vin),
+    .xin (xin),
+    .vout(vout),
+    .yout(yout)
+  );
+
+  // Clock generation
+
+  initial begin
+    clk = 1'b0;
+    forever #(TCLK/2) clk = ~clk;
+  end
+
+  // Task: apply synchronous reset
+
+  task apply_reset;
+    begin
+      rst = 1'b1;
+      vin = 1'b0;
+      xin = 16'sd0;
+
+      @(posedge clk);
+      @(posedge clk);
+      @(posedge clk);
+
+      rst = 1'b0;
+
+      @(posedge clk);
+    end
+  endtask
+
+
+  // Log outputs whenever vout == 1
+
+  always @(posedge clk) begin
+    if (!rst && vout) begin
+      $fwrite(fout, "%04h\n", yout[15:0]);
+    end
+  end
+
+  // Task: run one file
+ 
+  task run_file;
+    input [8*64-1:0] in_filename;
+    input [8*64-1:0] out_filename;
+    begin
+     
+      $readmemh(in_filename, xmem);  // Load input samples into xmem
+
+      fout = $fopen(out_filename, "w");  // Open output file
+      if (fout == 0) begin
+        $display("ERROR: could not open output file %s", out_filename);
+        $finish;
+      end
+
+     
+      apply_reset;  // Reset DUT before run
+
+      
+      vin = 1'b1;  // Feed samples: 1 new sample each clock
+      for (n = 0; n < NSAMPLES; n = n + 1) begin
+        xin = $signed(xmem[n]);  
+        @(posedge clk);           
+      end
+
+    
+      xin = 16'sd0;   // Stop feeding
+      vin = 1'b0;
+      @(posedge clk);
+
+      
+      for (n = 0; n < 10; n = n + 1) begin // Flush 10  cycles as DUT has one sample latency)
+        @(posedge clk);
+      end
+
+      // Close output file
+      $fclose(fout);
+    end
+  endtask
+
+  // Main
+
+  initial begin
+
+    rst = 1'b1;
+    vin = 1'b0;
+    xin = 16'sd0;
+
+    run_file("x950_q214_hex.txt",  "y950_direct_hex.txt");
+    run_file("x1100_q214_hex.txt", "y1100_direct_hex.txt");
+    run_file("x2000_q214_hex.txt", "y2000_direct_hex.txt");
+
+    $display("DONE: outputs written.");
+    $finish;
+  end
+
+endmodule
