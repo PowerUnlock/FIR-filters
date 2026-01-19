@@ -4,7 +4,7 @@ module tb_fir_optimized_sym;
 
   parameter integer N_TAPS   = 100;
   parameter integer NSAMPLES = 2000;
-  parameter integer TCLK     = 10;   // ns => 100 MHz
+  parameter integer TCLK     = 10;   
 
   reg clk;
   reg rst;
@@ -35,6 +35,14 @@ module tb_fir_optimized_sym;
     forever #(TCLK/2) clk = ~clk;
   end
 
+//__________________________________________________________
+
+initial begin
+  $dumpfile("fir_optimized_sym.vcd");  
+  $dumpvars(0, tb_fir_optimized_sym);   
+end
+//______________________________________________________________
+
   // synchronous reset
 
   task apply_reset;
@@ -53,6 +61,18 @@ module tb_fir_optimized_sym;
     end
   endtask
 
+// Log output whenever valid
+
+  
+always @(negedge clk) begin
+  if (!rst && vout) begin
+    $fwrite(fout, "%04h\n", yout);
+  end
+end
+
+
+//.................................................
+
   // Run file
   
   task run_file;
@@ -63,7 +83,7 @@ module tb_fir_optimized_sym;
       $readmemh(in_filename, xmem); // Load inputs
 
       
-      fout = $fopen(out_filename, "w"); 
+      fout = $fopen(out_filename, "w"); // Open output files
       if (fout == 0) begin
         $display("ERROR: could not open output file %s", out_filename);
         $finish;
@@ -72,34 +92,34 @@ module tb_fir_optimized_sym;
      
       apply_reset;  // Reset DUT
 
-      // Feed 1 sample per clock.
+// Feed 1 sample per clock: drive on negedge, sample on posedge
+vin = 1'b1;
+for (n = 0; n < NSAMPLES; n = n + 1) begin
+  @(negedge clk);
+  xin = $signed(xmem[n]);   // stable for the upcoming posedge
+end
 
-      vin = 1'b1;
-      for (n = 0; n < NSAMPLES; n = n + 1) begin
-        xin = $signed(xmem[n]);   
-        @(posedge clk);           
-      end
+// One extra posedge so the last sample is captured
+@(posedge clk);
 
-      // Stop feeding input
+
+
+      // Stop feeding 
+      @(negedge clk);
       xin = 16'sd0;
       vin = 1'b0;
-      @(posedge clk);
+ 
 
       
-      for (n = 0; n < 10; n = n + 1) begin // flush some cycles
+      for (n = 0; n < 10; n = n + 1) begin // flush 10 cycles for safety
         @(posedge clk);
       end
-
+      
+      @(negedge clk);
       $fclose(fout);
     end
   endtask
 
-  // Log output whenever valid
-  always @(posedge clk) begin
-    if (!rst && vout) begin
-      $fwrite(fout, "%04h\n", yout[15:0]);
-    end
-  end
 
   // Main
   initial begin
