@@ -46,7 +46,16 @@ module tb_direct_fir;
     forever #(TCLK/2) clk = ~clk;
   end
 
-  // Task: apply synchronous reset
+//__________________________________________________________
+
+initial begin
+  $dumpfile("direct_fir.vcd");  
+  $dumpvars(0, tb_direct_fir);   
+end
+
+//______________________________________________________________
+
+  // synchronous reset
 
   task apply_reset;
     begin
@@ -65,17 +74,17 @@ module tb_direct_fir;
   endtask
 
 
-  // Log outputs whenever vout == 1
+  // Log output whenever valid
 
-  always @(posedge clk) begin
-    if (!rst && vout) begin
-      $fwrite(fout, "%04h\n", yout[15:0]);
-    end
+  always @(negedge clk) begin
+  if (!rst && vout) begin
+    $fwrite(fout, "%04h\n", yout);
   end
+end
 
-  // Task: run one file
+  // Run file
  
-  task run_file;
+    task run_file;
     input [8*64-1:0] in_filename;
     input [8*64-1:0] out_filename;
     begin
@@ -89,29 +98,34 @@ module tb_direct_fir;
       end
 
      
-      apply_reset;  // Reset DUT before run
+      apply_reset;  // Reset DUT
 
+// Feed 1 sample per clock: drive on negedge, sample on posedge
+vin = 1'b1;
+for (n = 0; n < NSAMPLES; n = n + 1) begin
+  @(negedge clk);
+  xin = $signed(xmem[n]);   // stable for the upcoming posedge
+end
+
+// One extra posedge so the last sample is captured
+@(posedge clk);
       
-      vin = 1'b1;  // Feed samples: 1 new sample each clock
-      for (n = 0; n < NSAMPLES; n = n + 1) begin
-        xin = $signed(xmem[n]);  
-        @(posedge clk);           
-      end
-
     
-      xin = 16'sd0;   // Stop feeding
+      // Stop feeding 
+      @(negedge clk);
+      xin = 16'sd0;
       vin = 1'b0;
-      @(posedge clk);
+ 
 
       
-      for (n = 0; n < 10; n = n + 1) begin // Flush 10  cycles as DUT has one sample latency)
+      for (n = 0; n < 10; n = n + 1) begin // flush 10 cycles for safety
         @(posedge clk);
       end
-
-      // Close output file
+      
+      @(negedge clk);
       $fclose(fout);
     end
-  endtask
+  endtask   
 
   // Main
 
