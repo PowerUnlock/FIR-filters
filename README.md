@@ -1,2 +1,2 @@
 # FIR-filters
-FIR filters implemented by using MATLAB and Verilog.
+FIR filters implemented by using Verilog.
